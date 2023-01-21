@@ -16,6 +16,6 @@ jobs:
           node-version: "16.x"
           registry-url: "https://registry.yarnpkg.com"
       - run: yarn
-      - run: yarn publish
+      - run: yarn publish --access public
     env:
       NODE_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
