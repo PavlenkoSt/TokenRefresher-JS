@@ -56,7 +56,7 @@ tokenRefresherModule({
 
 ## Util for socket connection (signalR)
 
-Use such a utility in the connect block when you need a refresh token and try again.
+Use such a utility in the catch block when you need a refresh token and try again.
 
 ```javascript
 import {
@@ -66,8 +66,7 @@ import {
 } from "token-refresher-module";
 
 const refreshTokenOnSignalHubConnection = async (
-  connectToServerWithSocketsFn,
-  isTokenRefreshing: boolean
+  connectToServerWithSocketsFn
 ) => {
   let result;
 
