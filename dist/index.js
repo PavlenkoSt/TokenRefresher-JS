@@ -42,7 +42,7 @@ const initTokenRefreshingAndExecuteAllQueue = (actionTokenRefresh, actionTokenRe
     exports.isTokenRefreshing = false;
 });
 exports.initTokenRefreshingAndExecuteAllQueue = initTokenRefreshingAndExecuteAllQueue;
-const run = (axiosInstance, validationBeforeRefresh, refreshToken, afterTokenRefreshedSuccess, afterTokenRefreshFailed) => {
+const run = ({ axiosInstance, refreshToken, validationBeforeRefresh, afterTokenRefreshFailed, afterTokenRefreshedSuccess, }) => {
     axiosInstance.interceptors.response.use((response) => __awaiter(void 0, void 0, void 0, function* () {
         return response;
     }), function (error) {
