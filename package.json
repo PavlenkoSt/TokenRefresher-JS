@@ -1,6 +1,6 @@
 {
   "name": "token-refresher-module",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "repository": {
     "type": "git",
     "url": "https://github.com/PavlenkoSt/TokenRefresher-module__JS.git"
@@ -8,8 +8,7 @@
   "main": "./dist/index.js",
   "license": "MIT",
   "scripts": {
-    "compile": "npx tsc",
-    "publish": "npm publish --access public"
+    "compile": "npx tsc"
   },
   "dependencies": {
     "axios": "^1.2.3"
