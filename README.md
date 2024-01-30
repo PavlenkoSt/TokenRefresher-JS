@@ -1,31 +1,31 @@
-# Token-refresher-module
+# axios-refresh-token
 
-This module is guaranteed to send 1 request for a refresh token even with parallel requests. It also provides methods for mixing Axios requests with any other types of requests (such as web sockets).
+This simple module ensures the dispatch of a single request for a refresh token, even when handling parallel requests. Additionally, it offers methods for seamlessly integrating Axios requests with any socket libraries.
 
 ## Installation
 
 ```bash
-yarn add token-refresher-module
+yarn add axios-refresh-token
 ```
 
 or
 
 ```bash
-npm install token-refresher-module
+npm install axios-refresh-token
 ```
 
 ## Basic Usage
 
 ```javascript
 import axios from "axios";
-import tokenRefresherModule from "token-refresher-module";
+import tokenRefresherModule from "axios-refresh-token";
 
 const axiosInstance = axios.create({
   withCredentials: true,
   baseURL: "https://example.com/api",
 });
 
-const validationBeforeRefresh = (error) => {
+const preventRefresh = (error) => {
   if (error.response.headers.userbanned) {
     return false;
   }
@@ -37,33 +37,35 @@ const refreshToken = async () => {
   return token;
 };
 
-const afterTokenRefreshedSuccess = () => {
+const onRefreshSuccess = () => {
   console.log("Token refreshed success");
 };
 
-const afterTokenRefreshFailed = () => {
+const onRefreshFailed = () => {
   console.log("Token refreshing failed");
 };
 
 tokenRefresherModule({
   axiosInstance,
-  validationBeforeRefresh,
   refreshToken,
-  afterTokenRefreshedSuccess,
-  afterTokenRefreshFailed,
+  preventRefresh,
+  onRefreshFailed, // optional
+  onRefreshSuccess, // optional
+  retries: 5, // optional, default 5
+  retryDelay: 300, // optional, default 300
 });
 ```
 
-## Util for socket connection (signalR)
+## Advance Usage
 
-Use such a utility in the catch block when you need a refresh token and try again.
+Employ this utility within the catch block when a refresh token is required, enabling a retry of the operation.
 
 ```javascript
 import {
-  addToQueueInPromiseWrapper,
-  initTokenRefreshingAndExecuteAllQueue,
-  isTokenRefreshing,
-} from "token-refresher-module";
+  addToQueue,
+  refreshAndExecuteQueue,
+  isRefreshing,
+} from "axios-refresh-token";
 
 const refreshTokenOnSignalHubConnection = async (
   connectToServerWithSocketsFn
@@ -71,21 +73,23 @@ const refreshTokenOnSignalHubConnection = async (
   let result;
 
   if (isTokenRefreshing) {
-    result = await addToQueueInPromiseWrapper(connectToServerWithSocketsFn);
+    result = await addToQueue({
+      resolveAction: connectToServerWithSocketsFn,
+      actionBeforeResolving,
+    });
   } else {
-    result = await initTokenRefreshingAndExecuteAllQueue(
-      connectToServerWithSocketsFn
-    );
+    result = await refreshAndExecuteQueue({
+      onRefreshSuccess: connectToServerWithSocketsFn,
+      refreshToken,
+      retries, // optional, default 5
+      retryDelay, // optional, default 300
+      onRefreshFailed, // optional
+    });
   }
 
   return result;
 };
 ```
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first
-to discuss what you would like to change.
 
 ## License
 

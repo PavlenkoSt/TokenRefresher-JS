@@ -1,16 +1,20 @@
 import { AxiosInstance, AxiosResponse } from "axios";
 
-export let isTokenRefreshing = false;
-export let refreshQueue: any[] = [];
+export let isRefreshing = false;
+let queue: {
+  resolve: (token: string) => void;
+  reject: (err: any) => void;
+}[] = [];
 
-const retries = 5;
-
-export const addToQueueInPromiseWrapper = (
-  resolveAction: (token: string) => Promise<AxiosResponse<any, any>>,
-  actionBeforeResolving?: (token: string) => void
-) =>
+export const addToQueue = ({
+  resolveAction,
+  actionBeforeResolving,
+}: {
+  resolveAction: (token: string) => Promise<AxiosResponse<any, any>>;
+  actionBeforeResolving?: (token: string) => void;
+}) =>
   new Promise((resolve, reject) => {
-    refreshQueue.push({
+    queue.push({
       resolve: (token: string) => {
         if (actionBeforeResolving) {
           actionBeforeResolving(token);
@@ -24,73 +28,110 @@ export const addToQueueInPromiseWrapper = (
     });
   });
 
-export const initTokenRefreshingAndExecuteAllQueue = async (
-  actionTokenRefresh: () => Promise<string>,
-  actionTokenRefreshed: (token: string) => void
-) => {
-  isTokenRefreshing = true;
+export const refreshAndExecuteQueue = async ({
+  refreshToken,
+  onRefreshSuccess,
+  retries = 5,
+  retryDelay = 300,
+  onRefreshFailed,
+}: {
+  refreshToken: () => Promise<string>;
+  retries?: number;
+  retryDelay?: number;
+  onRefreshSuccess: (token: string) => void;
+  onRefreshFailed?: () => void;
+}) => {
+  isRefreshing = true;
 
-  const tokenResponse = await actionTokenRefresh();
+  let tokenRefreshed = false;
+  let retriesLeft = retries;
 
-  if (!tokenResponse) {
-    refreshQueue.forEach((v) =>
-      v.reject("Token wasnt refresh -> initTokenRefreshingAndExecuteAllQueue")
-    );
-    refreshQueue = [];
-  } else {
-    actionTokenRefreshed(tokenResponse);
+  let token: string | null = null;
 
-    await Promise.all(refreshQueue.map((v) => v.resolve(tokenResponse)));
-    refreshQueue = [];
+  while (retriesLeft > 0 && !tokenRefreshed) {
+    try {
+      const tokenResponse = await refreshToken();
+
+      if (tokenResponse) {
+        tokenRefreshed = true;
+        token = tokenResponse;
+      }
+
+      retriesLeft--;
+    } catch (e) {
+      retriesLeft--;
+    }
+
+    if (retriesLeft > 0) {
+      await new Promise((res) => setTimeout(res, retryDelay));
+    }
   }
 
-  isTokenRefreshing = false;
+  if (!token) {
+    queue.forEach((v) =>
+      v.reject("Token wasnt refresh -> refreshAndExecuteQueue")
+    );
+    queue = [];
+    if (onRefreshFailed) {
+      onRefreshFailed();
+    }
+  } else {
+    onRefreshSuccess(token);
+
+    await Promise.all(queue.map((v) => v.resolve(token as string)));
+    queue = [];
+  }
+
+  isRefreshing = false;
 };
 
 const run = ({
   axiosInstance,
   refreshToken,
-  validationBeforeRefresh,
-  afterTokenRefreshFailed,
-  afterTokenRefreshedSuccess,
+  preventRefresh,
+  onRefreshFailed,
+  onRefreshSuccess,
+  retries = 5,
+  retryDelay = 300,
 }: {
   axiosInstance: AxiosInstance;
-  validationBeforeRefresh: (error: any) => any;
+  preventRefresh: (error: any) => any;
   refreshToken: () => Promise<string>;
-  afterTokenRefreshedSuccess?: (token: string) => void;
-  afterTokenRefreshFailed?: () => void;
+  onRefreshSuccess?: (token: string) => void;
+  onRefreshFailed?: () => void;
+  retries?: number;
+  retryDelay?: number;
 }) => {
   axiosInstance.interceptors.response.use(
     async (response) => {
       return response;
     },
-    async function (error) {
+    async (error) => {
       const originalRequest = error.config;
 
-      originalRequest._retry =
-        typeof originalRequest._retry === "undefined"
-          ? 0
-          : ++originalRequest._retry;
-
-      const validated = validationBeforeRefresh(error);
-
-      if (originalRequest._retry === retries) {
-        if (afterTokenRefreshFailed) afterTokenRefreshFailed();
+      const prevented = preventRefresh(error);
+      if (prevented || error.response.status !== 401)
         return Promise.reject(error);
-      }
 
-      if (!validated) return Promise.reject(error);
+      const resultPromise = addToQueue({
+        resolveAction: () => axiosInstance.request(originalRequest),
+        actionBeforeResolving: (token) =>
+          (originalRequest.headers.Authorization = `Bearer ${token}`),
+      });
 
-      const resultPromise = addToQueueInPromiseWrapper(
-        () => axiosInstance.request(originalRequest),
-        (token) => (originalRequest.headers.Authorization = `Bearer ${token}`)
-      );
-
-      if (!isTokenRefreshing) {
-        initTokenRefreshingAndExecuteAllQueue(refreshToken, (token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-
-          if (afterTokenRefreshedSuccess) afterTokenRefreshedSuccess(token);
+      if (!isRefreshing) {
+        refreshAndExecuteQueue({
+          refreshToken,
+          retries,
+          retryDelay,
+          onRefreshSuccess: (token) => {
+            originalRequest.headers["Authorization"] = `Bearer ${token}`;
+            axiosInstance.defaults.headers.common[
+              "Authorization"
+            ] = `Bearer ${token}`;
+            if (onRefreshSuccess) onRefreshSuccess(token);
+          },
+          onRefreshFailed,
         });
       }
 
